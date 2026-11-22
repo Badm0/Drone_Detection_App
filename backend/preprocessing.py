@@ -1,4 +1,4 @@
-"""Advanced Frame Preprocessing for Small Drone Detection."""
+"""Clean Frame Preprocessing."""
 from __future__ import annotations
 from dataclasses import dataclass
 import cv2
@@ -33,22 +33,18 @@ def bgr_to_rgb(frame: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 class Preprocessor:
-    """Enhanced preprocessor tailored for small aerial objects (drones)."""
-
     def __init__(
         self,
-        size: int = 1280,
+        size: int = 640,
         *,
-        clahe: bool = True,
-        clahe_clip: float = 2.2,
+        clahe: bool = False,
+        clahe_clip: float = 1.5,
         clahe_tile: int = 8,
         denoise: bool = False,
-        sharpen: bool = True,
         pad_value: int = 114,
     ) -> None:
         self.size = size
         self.denoise = denoise
-        self.sharpen = sharpen
         self.pad_value = pad_value
         self._clahe = (
             cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
@@ -60,8 +56,7 @@ class Preprocessor:
         h, w = bgr.shape[:2]
         scale = min(self.size / w, self.size / h)
         new_w, new_h = max(1, round(w * scale)), max(1, round(h * scale))
-        # استخدام LANCZOS4 عند التكبير للحفاظ على تفاصيل الدرون الصغير جداً
-        interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LANCZOS4
+        interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
         resized = cv2.resize(bgr, (new_w, new_h), interpolation=interp)
         pad_x, pad_y = (self.size - new_w) // 2, (self.size - new_h) // 2
         canvas = np.full((self.size, self.size, 3), self.pad_value, dtype=np.uint8)
@@ -69,16 +64,10 @@ class Preprocessor:
         return canvas, LetterboxMeta(scale, pad_x, pad_y, w, h)
 
     def _equalize(self, bgr: np.ndarray) -> np.ndarray:
-        """CLAHE on LAB lightness channel to separate small drones from clouds/sky."""
         lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
         l_chan, a_chan, b_chan = cv2.split(lab)
         l_chan = self._clahe.apply(l_chan)
         return cv2.cvtColor(cv2.merge((l_chan, a_chan, b_chan)), cv2.COLOR_LAB2BGR)
-
-    def _unsharp_mask(self, bgr: np.ndarray) -> np.ndarray:
-        """Enhance edges of tiny distant drones using Unsharp Masking."""
-        gaussian = cv2.GaussianBlur(bgr, (0, 0), 1.5)
-        return cv2.addWeighted(bgr, 1.45, gaussian, -0.45, 0)
 
     def __call__(self, frame: np.ndarray, *, is_rgb: bool = False) -> tuple[np.ndarray, LetterboxMeta]:
         bgr = ensure_bgr_uint8(frame)
@@ -89,8 +78,6 @@ class Preprocessor:
             boxed = cv2.bilateralFilter(boxed, d=5, sigmaColor=35, sigmaSpace=35)
         if self._clahe is not None:
             boxed = self._equalize(boxed)
-        if self.sharpen:
-            boxed = self._unsharp_mask(boxed)
         return boxed, meta
 
 def boxes_to_source(xyxy: np.ndarray, meta: LetterboxMeta) -> np.ndarray:

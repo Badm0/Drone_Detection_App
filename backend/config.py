@@ -19,7 +19,7 @@ def _names(name: str, default: str = "") -> frozenset[str]:
     return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
 
 
-@dataclass(frozen=True)
+@dataclass
 class Settings:
     # Model
     model_path: str
@@ -62,12 +62,12 @@ def get_settings() -> Settings:
     return Settings(
         model_path=os.getenv("SV_MODEL_PATH") or default_model,
         conf=float(os.getenv("SV_CONF", "0.20")),
-        imgsz=int(os.getenv("SV_IMGSZ", "1280")),
+        imgsz=int(os.getenv("SV_IMGSZ", "640")),
         device=os.getenv("SV_DEVICE", ""),  # "" = auto (CUDA if available, else CPU)
         # Empty set = every class the model predicts counts as a threat.
         threat_classes=_names("SV_THREAT_CLASSES"),
         mock_detector=_bool("SV_MOCK_DETECTOR", False),
-        clahe=_bool("SV_CLAHE", True),
+        clahe=_bool("SV_CLAHE", False),
         clahe_clip=float(os.getenv("SV_CLAHE_CLIP", "2.2")),
         denoise=_bool("SV_DENOISE", False),
         output_max_side=int(os.getenv("SV_OUTPUT_MAX_SIDE", "1280")),

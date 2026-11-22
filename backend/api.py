@@ -267,21 +267,23 @@ async def panic(request: Request, body: PanicIn) -> dict:
 class SettingsUpdate(BaseModel):
     conf: float
     iou: float
+    clahe: bool = True
+    denoise: bool = False
 
 @app.post("/update_settings")
 async def update_settings(request: Request, body: SettingsUpdate) -> dict:
     s = request.app.state.settings
     det = request.app.state.detector
     
-    # تحديث إعدادات التطبيق
-    s.conf = body.conf
-    setattr(s, 'iou', body.iou)
+    # تحديث الموديل أولاً وبشكل مباشر
+    det.conf = float(body.conf)
+    det.iou = float(body.iou)
     
-    # تحديث إعدادات المودل مباشرة إذا كان يدعمها
-    if hasattr(det, 'conf'):
-        det.conf = body.conf
-    if hasattr(det, 'iou'):
-        det.iou = body.iou
+    # تحديث الإعدادات العامة حتى لو كانت مقفولة
+    object.__setattr__(s, 'conf', float(body.conf))
+    object.__setattr__(s, 'iou', float(body.iou))
+    object.__setattr__(s, 'clahe', bool(body.clahe))
+    object.__setattr__(s, 'denoise', bool(body.denoise))
         
-    log.info(f"Model settings updated: conf={body.conf}, iou={body.iou}")
-    return {"message": "Settings updated successfully", "conf": body.conf, "iou": body.iou}
+    log.info(f"Model settings updated: conf={det.conf}, iou={det.iou}")
+    return {"message": "Settings updated successfully", "conf": det.conf, "iou": det.iou}

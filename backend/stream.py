@@ -146,20 +146,39 @@ class FrameProcessor:
         infer_ms = 0.0
         if ran:
             t0 = time.perf_counter()
+            all_dets = []
+            
+            # المرحلة 1: فحص الصورة الأصلية الخام (لضمان عدم خسارة أي دقة أصلية للموديل)
             model_in, meta = self.pre(frame)
             raw = self.detector.predict(model_in)
-            all_dets = []
             if raw:
                 boxes = boxes_to_source(np.array([d.box for d in raw]), meta)
                 all_dets.extend([replace(d, box=tuple(float(v) for v in b)) for d, b in zip(raw, boxes)])
             
-            # تقنية SAHI Slicing للصور الثابتة لاكتشاف الدرونز متناهية الصغر
-            if force_detect:
+            # المرحلة 2: إذا كان زر تحسين الدرون الصغير مفعلاً، نفحص النسخة المحسنة والمقطعة (SAHI) وندمج أعلى نتيجة
+            if force_detect and getattr(self.s, "clahe", True):
+                # أ. نسخة محسنة بـ CLAHE خفيف + إبراز حواف
+                lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+                l_c, a_c, b_c = cv2.split(lab)
+                l_c = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8)).apply(l_c)
+                enh = cv2.cvtColor(cv2.merge((l_c, a_c, b_c)), cv2.COLOR_LAB2BGR)
+                enh = cv2.addWeighted(enh, 1.3, cv2.GaussianBlur(enh, (0, 0), 1.2), -0.3, 0)
+                
+                e_in, e_meta = self.pre(enh)
+                e_raw = self.detector.predict(e_in)
+                if e_raw:
+                    e_boxes = boxes_to_source(np.array([d.box for d in e_raw]), e_meta)
+                    all_dets.extend([replace(d, box=tuple(float(v) for v in b)) for d, b in zip(e_raw, e_boxes)])
+
+                # ب. تقنية SAHI (تقطيع وتكبير الأرباع + المركز للدرون الصغير جداً)
                 fh, fw = frame.shape[:2]
-                slice_h, slice_w = int(fh * 0.6), int(fw * 0.6)
-                offsets = [(0, 0), (fw - slice_w, 0), (0, fh - slice_h), (fw - slice_w, fh - slice_h)]
+                sh, sw = int(fh * 0.65), int(fw * 0.65)
+                offsets = [
+                    (0, 0), (fw - sw, 0), (0, fh - sh), (fw - sw, fh - sh),
+                    ((fw - sw) // 2, (fh - sh) // 2)  # مربع الوسط
+                ]
                 for ox, oy in offsets:
-                    crop = frame[oy:oy + slice_h, ox:ox + slice_w]
+                    crop = enh[oy:oy + sh, ox:ox + sw]
                     if crop.size == 0:
                         continue
                     c_in, c_meta = self.pre(crop)
@@ -169,12 +188,23 @@ class FrameProcessor:
                         c_boxes[:, [0, 2]] += ox
                         c_boxes[:, [1, 3]] += oy
                         all_dets.extend([replace(d, box=tuple(float(v) for v in b)) for d, b in zip(c_raw, c_boxes)])
-                
-                # دمج المربعات المتكررة باستخدام Non-Maximum Suppression (NMS)
+
+                # ج. إذا كانت الصورة تحتوي على تشويش نقطي، نجرب تمرير نسخة منعمّة كفرصة إضافية فقط
+                if getattr(self.s, "denoise", False):
+                    den = cv2.medianBlur(frame, 3)
+                    d_in, d_meta = self.pre(den)
+                    d_raw = self.detector.predict(d_in)
+                    if d_raw:
+                        d_boxes = boxes_to_source(np.array([d.box for d in d_raw]), d_meta)
+                        all_dets.extend([replace(d, box=tuple(float(v) for v in b)) for d, b in zip(d_raw, d_boxes)])
+
+                # دمج كل الاكتشافات وأخذ المربع صاحب أعلى نسبة ثقة (NMS)
                 if len(all_dets) > 1:
+                    # ترتيب تنازلي حسب الدقة لضمان اختيار الأعلى دائماً
+                    all_dets.sort(key=lambda d: d.confidence, reverse=True)
                     xywh = [[d.box[0], d.box[1], d.box[2] - d.box[0], d.box[3] - d.box[1]] for d in all_dets]
                     scores = [d.confidence for d in all_dets]
-                    keep = cv2.dnn.NMSBoxes(xywh, scores, score_threshold=0.15, nms_threshold=0.45)
+                    keep = cv2.dnn.NMSBoxes(xywh, scores, score_threshold=0.10, nms_threshold=0.40)
                     if len(keep) > 0:
                         all_dets = [all_dets[int(i)] for i in np.array(keep).flatten()]
 
