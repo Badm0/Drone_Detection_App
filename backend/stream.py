@@ -148,10 +148,37 @@ class FrameProcessor:
             t0 = time.perf_counter()
             model_in, meta = self.pre(frame)
             raw = self.detector.predict(model_in)
+            all_dets = []
             if raw:
                 boxes = boxes_to_source(np.array([d.box for d in raw]), meta)
-                raw = [replace(d, box=tuple(float(v) for v in b)) for d, b in zip(raw, boxes)]
-            self._last = raw
+                all_dets.extend([replace(d, box=tuple(float(v) for v in b)) for d, b in zip(raw, boxes)])
+            
+            # تقنية SAHI Slicing للصور الثابتة لاكتشاف الدرونز متناهية الصغر
+            if force_detect:
+                fh, fw = frame.shape[:2]
+                slice_h, slice_w = int(fh * 0.6), int(fw * 0.6)
+                offsets = [(0, 0), (fw - slice_w, 0), (0, fh - slice_h), (fw - slice_w, fh - slice_h)]
+                for ox, oy in offsets:
+                    crop = frame[oy:oy + slice_h, ox:ox + slice_w]
+                    if crop.size == 0:
+                        continue
+                    c_in, c_meta = self.pre(crop)
+                    c_raw = self.detector.predict(c_in)
+                    if c_raw:
+                        c_boxes = boxes_to_source(np.array([d.box for d in c_raw]), c_meta)
+                        c_boxes[:, [0, 2]] += ox
+                        c_boxes[:, [1, 3]] += oy
+                        all_dets.extend([replace(d, box=tuple(float(v) for v in b)) for d, b in zip(c_raw, c_boxes)])
+                
+                # دمج المربعات المتكررة باستخدام Non-Maximum Suppression (NMS)
+                if len(all_dets) > 1:
+                    xywh = [[d.box[0], d.box[1], d.box[2] - d.box[0], d.box[3] - d.box[1]] for d in all_dets]
+                    scores = [d.confidence for d in all_dets]
+                    keep = cv2.dnn.NMSBoxes(xywh, scores, score_threshold=0.15, nms_threshold=0.45)
+                    if len(keep) > 0:
+                        all_dets = [all_dets[int(i)] for i in np.array(keep).flatten()]
+
+            self._last = all_dets
             infer_ms = (time.perf_counter() - t0) * 1000
         out = self._display_frame(frame)
         draw_detections(out, self._last, out.shape[1] / frame.shape[1])
@@ -184,7 +211,7 @@ def send_telegram_alert(image_path: str, label: str, conf: float, source_name: s
         return
     
     url = f"https://api.telegram.org/bot{token}/sendPhoto"
-    caption = f"🚨 إنذار أمني (Smart Vision)!\n\n🔍 التهديد: {label.upper()}\n🎯 الدقة: {conf*100:.0f}%\n🎥 الكاميرا: {source_name}"
+    caption = f"🚨 إنذار أمني (Drone Detection)!\n\n🔍 التهديد: {label.upper()}\n🎯 الدقة: {conf*100:.0f}%\n🎥 الكاميرا: {source_name}"
     
     try:
         with open(image_path, 'rb') as photo:

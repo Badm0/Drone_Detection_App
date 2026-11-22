@@ -113,7 +113,7 @@ class YoloDetector:
             label = str(names.get(int(k), k))
             
             # 2. فلترة الحفظ الإجبارية: يعتبر "تهديد حقيقي" (ويتم حفظ صورته) فقط إذا كانت النسبة 60% فما فوق
-            is_real_threat = self._is_threat(label) and float(score) >= 0.60
+            is_real_threat = self._is_threat(label) and float(score) >= 0.25
             
             detections.append(
                 Detection(label, float(score), tuple(float(v) for v in box), is_real_threat)

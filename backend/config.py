@@ -61,16 +61,16 @@ def get_settings() -> Settings:
     default_model = "best.engine" if Path("best.engine").is_file() else "best.pt"
     return Settings(
         model_path=os.getenv("SV_MODEL_PATH") or default_model,
-        conf=float(os.getenv("SV_CONF", "0.30")),
-        imgsz=int(os.getenv("SV_IMGSZ", "640")),
+        conf=float(os.getenv("SV_CONF", "0.20")),
+        imgsz=int(os.getenv("SV_IMGSZ", "1280")),
         device=os.getenv("SV_DEVICE", ""),  # "" = auto (CUDA if available, else CPU)
         # Empty set = every class the model predicts counts as a threat.
         threat_classes=_names("SV_THREAT_CLASSES"),
         mock_detector=_bool("SV_MOCK_DETECTOR", False),
         clahe=_bool("SV_CLAHE", True),
-        clahe_clip=float(os.getenv("SV_CLAHE_CLIP", "1.5")),
+        clahe_clip=float(os.getenv("SV_CLAHE_CLIP", "2.2")),
         denoise=_bool("SV_DENOISE", False),
-        output_max_side=int(os.getenv("SV_OUTPUT_MAX_SIDE", "960")),
+        output_max_side=int(os.getenv("SV_OUTPUT_MAX_SIDE", "1280")),
         jpeg_quality=int(os.getenv("SV_JPEG_QUALITY", "80")),
         max_stream_fps=float(os.getenv("SV_MAX_STREAM_FPS", "30")),
         detect_every=max(1, int(os.getenv("SV_DETECT_EVERY", "1"))),
@@ -81,7 +81,7 @@ def get_settings() -> Settings:
         incidents_dir=incidents_dir,
         upload_dir=upload_dir,
         max_upload_mb=int(os.getenv("SV_MAX_UPLOAD_MB", "500")),
-        max_sources=max(1, int(os.getenv("SV_MAX_SOURCES", "8"))),
+        max_sources=max(1, int(os.getenv("SV_MAX_SOURCES", "100"))),
         panic_webhook_url=os.getenv("SV_PANIC_WEBHOOK_URL", "").strip(),
         cors_origins=tuple(
             o.strip() for o in os.getenv("SV_CORS_ORIGINS", "*").split(",") if o.strip()
