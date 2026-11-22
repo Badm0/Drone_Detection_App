@@ -456,7 +456,17 @@ if not ss.logged_in:
 
 # ------------------------------------------------------------------ Left Sidebar Content
 with st.sidebar:
-    st.markdown(w.profile_html(OPERATOR, ROLE, STATION).strip(), unsafe_allow_html=True)
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:12px; padding:12px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.35); border-radius:16px; margin-bottom:15px;">
+        <div style="width:42px; height:42px; border-radius:12px; background:rgba(46,229,157,0.15); border:1.5px solid #2EE59D; display:flex; align-items:center; justify-content:center; color:#2EE59D; font-weight:800; font-size:1rem;">
+            🛸
+        </div>
+        <div style="line-height:1.3;">
+            <div style="color:#f8fafc; font-weight:700; font-size:0.95rem;">Operator 01</div>
+            <div style="color:#38BDF8; font-size:0.75rem; font-weight:500;">Air Defense · SOC Station 01</div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
     page = st.radio("Navigation", NAV, key="nav", label_visibility="collapsed")
     
     st.markdown("<hr style='margin: 1rem 0; border-color: rgba(56, 189, 248, 0.2);'>", unsafe_allow_html=True)
@@ -479,12 +489,11 @@ with st.sidebar:
     if (new_enhance != ss.enhance_drones) or (new_denoise != ss.denoise_salt) or (new_conf != ss.conf_thresh):
         ss.enhance_drones = new_enhance
         ss.denoise_salt = new_denoise
-        if new_conf != ss.conf_thresh:
-            ss.conf_thresh = new_conf
-            try:
-                requests.post(f"{API_URL}/update_settings", json={"conf": new_conf / 100.0, "iou": 0.45}, timeout=2)
-            except Exception:
-                pass
+        ss.conf_thresh = new_conf
+        try:
+            requests.post(f"{API_URL}/update_settings", json={"conf": new_conf / 100.0, "iou": 0.45, "clahe": new_enhance, "denoise": new_denoise}, timeout=2)
+        except Exception:
+            pass
         ss.saved_sources.clear()
     
     current_names = [f.name for f in uploaded_files] if uploaded_files else []
@@ -503,7 +512,7 @@ with st.sidebar:
                         is_img = ext in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
                         
                         # تطبيق الـ Preprocessing إذا كان الزر مفعلاً
-                        upload_bytes = apply_small_drone_preprocess(raw_bytes, ss.denoise_salt) if (is_img and ss.enhance_drones) else raw_bytes
+                        upload_bytes = raw_bytes
                         
                         src = client.upload(f.name, upload_bytes, mime_type)
                         src["raw_bytes"] = upload_bytes
