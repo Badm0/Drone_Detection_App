@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cv2
+import numpy as np
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -20,15 +21,44 @@ STATION = os.getenv("SV_STATION", "SOC station 01")
 NAV = ["Live Monitor", "Incident Log", "System Status"]
 ACCEPTED = ["mp4", "avi", "mov", "mkv", "webm", "m4v", "jpg", "jpeg", "png", "bmp", "webp"]
 
-# تم تعديل عنوان صفحة المتصفح هنا
 st.set_page_config(page_title="Drone Detection", layout="wide", initial_sidebar_state="expanded")
+
+# ------------------------------------------------------------------ دالة معالجة الصور للدرون الصغير وإزالة التشويش
+def apply_small_drone_preprocess(image_bytes: bytes, remove_noise: bool = True) -> bytes:
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        return image_bytes
+
+    # 1. إزالة التشويش النقطي (Salt-and-Pepper Noise) مع الحفاظ على حواف الدرون
+    if remove_noise:
+        img = cv2.medianBlur(img, 3)
+
+    # 2. تكبير الصورة الذكي (Lanczos4 Upscaling) إذا كانت صغيرة
+    h, w = img.shape[:2]
+    if max(h, w) < 1280:
+        scale = 1280 / max(h, w)
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
+
+    # 3. تحسين التباين المحلي (CLAHE) لفصل الدرون عن السماء والغيوم
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l_ch, a_ch, b_ch = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+    l_ch = clahe.apply(l_ch)
+    img = cv2.cvtColor(cv2.merge((l_ch, a_ch, b_ch)), cv2.COLOR_LAB2BGR)
+
+    # 4. إبراز الحواف والمراوح (Unsharp Masking)
+    gaussian = cv2.GaussianBlur(img, (0, 0), 1.5)
+    img = cv2.addWeighted(img, 1.4, gaussian, -0.4, 0)
+
+    _, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    return buf.tobytes()
 
 # ------------------------------------------------------------------ Custom Animated Design
 def inject_navy_animated_design():
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Inter:wght@400;500;600;700&display=swap');
-    /* Keep Streamlit's native sidebar and its built-in open/close controls available. */
     [data-testid="stSidebar"] {
         position: relative;
         z-index: 100 !important;
@@ -51,7 +81,6 @@ def inject_navy_animated_design():
     [data-testid="stSidebar"] p {
         color: #e2e8f0;
     }
-    /* The native header contains Streamlit's sidebar toggle, so never hide it. */
     [data-testid="stHeader"] {
         background: rgba(4, 7, 17, 0.30) !important;
         z-index: 1000 !important;
@@ -68,7 +97,6 @@ def inject_navy_animated_design():
         border: 1px solid rgba(56, 189, 248, 0.35) !important;
         border-radius: 10px !important;
     }
-    /* Keep the menu/toolbar available; only hide Streamlit's unrelated footer/menu. */
     #MainMenu, footer {
         visibility: hidden !important;
     }
@@ -85,7 +113,6 @@ def inject_navy_animated_design():
         position: relative;
         z-index: 10 !important;
     }
-    /* البطاقات الزجاجية الداكنة */
     [data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] {
         background: rgba(15, 23, 42, 0.72) !important;
         backdrop-filter: blur(16px) !important;
@@ -96,7 +123,6 @@ def inject_navy_animated_design():
         padding: 20px !important;
         margin-bottom: 18px !important;
     }
-    /* الهيدر العلوي */
     .hub-header-card {
         background: rgba(15, 23, 42, 0.78);
         backdrop-filter: blur(16px);
@@ -145,7 +171,6 @@ def inject_navy_animated_design():
         letter-spacing: 1.5px;
         background: rgba(46, 229, 157, 0.08);
     }
-    /* الأزرار العامة */
     .stButton > button {
         width: 100% !important;
         background: rgba(15, 23, 42, 0.8) !important;
@@ -167,7 +192,6 @@ def inject_navy_animated_design():
         color: inherit !important;
         font-weight: 600 !important;
     }
-    /* حقول الإدخال */
     .stTextInput input {
         border-radius: 999px !important;
         border: 1.5px solid rgba(56, 189, 248, 0.5) !important;
@@ -175,14 +199,12 @@ def inject_navy_animated_design():
         color: #f8fafc !important;
         padding: 10px 20px !important;
     }
-    /* صندوق رفع الملفات */
     [data-testid="stFileUploaderDropzone"] {
         background: rgba(6, 11, 25, 0.65) !important;
         border: 1.5px dashed #38BDF8 !important;
         border-radius: 16px !important;
         color: #cbd5e1 !important;
     }
-    /* شريط عنوان الكاميرا وزر Full Screen */
     .cam-topbar {
         display: flex;
         align-items: center;
@@ -228,14 +250,11 @@ def inject_navy_animated_design():
     }
     </style>
     """, unsafe_allow_html=True)
-    # 2. Inject the animated navy background and fullscreen overlay
     components.html(
         """
         <script>
         (function() {
             const doc = window.parent.document;
-            
-            // أ. خلفية النيلي المتحركة
             let canvas = doc.getElementById('cbi-network-canvas');
             if (!canvas) {
                 canvas = doc.createElement('canvas');
@@ -318,7 +337,6 @@ def inject_navy_animated_design():
                 animate();
             }
             canvas.style.background = 'radial-gradient(circle at 50% 20%, #101f42 0%, #070d1f 65%, #040711 100%)';
-            // ج. نافذة Full Screen
             let overlay = doc.getElementById('sv-fs-overlay');
             if (!overlay) {
                 overlay = doc.createElement('div');
@@ -385,13 +403,15 @@ for key, default in {
     "saved_sources": {},
     "frame_scale": 100,
     "relay": True,
+    "enhance_drones": True,
+    "denoise_salt": True,
+    "conf_thresh": 25,
 }.items():
     ss.setdefault(key, default)
 
 health = get_health()
 
 # ------------------------------------------------------------------ Header Banner
-# تم تعديل الاسم الرئيسي والوصف الفرعي هنا
 def render_hub_header(badge_text: str):
     st.markdown(f"""
     <div class="hub-header-card">
@@ -440,12 +460,32 @@ with st.sidebar:
     page = st.radio("Navigation", NAV, key="nav", label_visibility="collapsed")
     
     st.markdown("<hr style='margin: 1rem 0; border-color: rgba(56, 189, 248, 0.2);'>", unsafe_allow_html=True)
-    st.markdown("<div style='color: #38BDF8; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; letter-spacing:1px;'>🎥 VIDEO SOURCES</div>", unsafe_allow_html=True)
+    st.markdown("<div style='color: #38BDF8; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; letter-spacing:1px;'>🎥 VIDEO & IMAGE SOURCES</div>", unsafe_allow_html=True)
     
     ready = bool(health and health.get("model_loaded"))
     uploaded_files = st.file_uploader(
-        "Upload multiple videos", type=ACCEPTED, accept_multiple_files=True, disabled=not ready, label_visibility="collapsed"
+        "Upload multiple files", type=ACCEPTED, accept_multiple_files=True, disabled=not ready, label_visibility="collapsed"
     )
+
+    # ------------------------------------------------------------------ قسم أزرار الـ Preprocessing الجديد
+    st.markdown("<hr style='margin: 1rem 0; border-color: rgba(56, 189, 248, 0.2);'>", unsafe_allow_html=True)
+    st.markdown("<div style='color: #2EE59D; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; letter-spacing:1px;'>🧠 SMALL DRONE PREPROCESS</div>", unsafe_allow_html=True)
+    
+    new_enhance = st.toggle("✨ Enhance Small Drones (CLAHE + Sharpen)", value=ss.enhance_drones)
+    new_denoise = st.toggle("🧹 Remove Noise (Median Filter)", value=ss.denoise_salt, disabled=not new_enhance)
+    new_conf = st.slider("🎯 AI Confidence (%)", min_value=10, max_value=90, value=ss.conf_thresh, step=5)
+
+    # إذا غير المستخدم أي زر، نحدث السيرفر ونعيد معالجة الصور المرفوعة فوراً
+    if (new_enhance != ss.enhance_drones) or (new_denoise != ss.denoise_salt) or (new_conf != ss.conf_thresh):
+        ss.enhance_drones = new_enhance
+        ss.denoise_salt = new_denoise
+        if new_conf != ss.conf_thresh:
+            ss.conf_thresh = new_conf
+            try:
+                requests.post(f"{API_URL}/update_settings", json={"conf": new_conf / 100.0, "iou": 0.45}, timeout=2)
+            except Exception:
+                pass
+        ss.saved_sources.clear()
     
     current_names = [f.name for f in uploaded_files] if uploaded_files else []
     for name in list(ss.saved_sources.keys()):
@@ -456,10 +496,22 @@ with st.sidebar:
         for f in uploaded_files:
             if f.name not in ss.saved_sources:
                 try:
-                    with st.spinner(f"Uploading {f.name}..."):
-                        src = client.upload(f.name, f.getvalue(), f.type or "application/octet-stream")
+                    with st.spinner(f"Processing {f.name}..."):
+                        raw_bytes = f.getvalue()
+                        mime_type = f.type or "application/octet-stream"
+                        ext = Path(f.name).suffix.lower()
+                        is_img = ext in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+                        
+                        # تطبيق الـ Preprocessing إذا كان الزر مفعلاً
+                        upload_bytes = apply_small_drone_preprocess(raw_bytes, ss.denoise_salt) if (is_img and ss.enhance_drones) else raw_bytes
+                        
+                        src = client.upload(f.name, upload_bytes, mime_type)
+                        src["raw_bytes"] = upload_bytes
+                        src["mime_type"] = mime_type
+                        if src.get("kind") == "image":
+                            src["image_data"] = client.image_bytes(src["id"])
                         ss.saved_sources[f.name] = src
-                except ApiError as exc:
+                except Exception as exc:
                     st.error(f"Error with {f.name}: {exc}")
     
     if ss.saved_sources:
@@ -471,8 +523,9 @@ with st.sidebar:
         ss.active_sources = [ss.saved_sources[v] for v in selected_vids]
     else:
         ss.active_sources = []
+
     st.markdown("<hr style='margin: 1rem 0; border-color: rgba(56, 189, 248, 0.2);'>", unsafe_allow_html=True)
-    st.markdown("<div style='color: #2EE59D; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; letter-spacing:1px;'>📐 FRAME & SIZE CONTROL</div>", unsafe_allow_html=True)
+    st.markdown("<div style='color: #38BDF8; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; letter-spacing:1px;'>📐 FRAME & SIZE CONTROL</div>", unsafe_allow_html=True)
     
     ss.frame_scale = st.slider("Frame Width (%)", min_value=50, max_value=100, value=100, step=5)
     grid_cols_choice = st.radio("Layout Mode:", ["2 Columns Grid", "1 Column (Large)"], horizontal=True)
@@ -519,7 +572,30 @@ def render_multiple_relays(sources: list[dict]):
                             unsafe_allow_html=True
                         )
                         if source["kind"] == "image":
-                            st.image(client.image_bytes(source["id"]), use_container_width=True)
+                            img_bytes = source.get("image_data")
+                            if img_bytes is None:
+                                try:
+                                    img_bytes = client.image_bytes(source["id"])
+                                    source["image_data"] = img_bytes
+                                except Exception:
+                                    if "raw_bytes" in source:
+                                        new_src = client.upload(source["name"], source["raw_bytes"], source["mime_type"])
+                                        source["id"] = new_src["id"]
+                                        img_bytes = client.image_bytes(source["id"])
+                                        source["image_data"] = img_bytes
+                            if img_bytes:
+                                b64_img = base64.b64encode(img_bytes).decode("utf-8")
+                                st.markdown(
+                                    f"""
+                                    <div class="video-card-wrapper">
+                                        <img src="data:image/jpeg;base64,{b64_img}" 
+                                             class="stream-frame" 
+                                             data-cam-id="{source['id']}"
+                                             style="width: {ss.frame_scale}%; height: auto; object-fit: contain;">
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
                             placeholders.append(None)
                             caps.append(None)
                         else:
@@ -570,7 +646,7 @@ def page_live():
         with st.container(border=True):
             st.markdown(
                 "<div style='text-align:center; padding: 50px 20px; color:#94a3b8 !important; font-size:1.05rem;'>"
-                "👈 Use Streamlit’s native sidebar toggle in the top-left corner to open the control panel, upload and select your test videos."
+                "👈 Use Streamlit’s native sidebar toggle in the top-left corner to open the control panel, upload and select your test videos or images."
                 "</div>",
                 unsafe_allow_html=True
             )
@@ -580,7 +656,7 @@ def page_live():
 def page_incidents():
     with st.container(border=True):
         search_inc = st.text_input("Search incidents", placeholder="Search saved drone detections...", label_visibility="collapsed")
-        st.markdown("<h4 style='color:#2EE59D !important; margin-top:10px;'>🔴 Confirmed Drone Captures (Confidence ≥ 60%)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='color:#2EE59D !important; margin-top:10px;'>🔴 Confirmed Drone Captures</h4>", unsafe_allow_html=True)
         
         images = get_incidents()
         if images is None:
@@ -615,7 +691,7 @@ def page_system():
             c1, c2, c3 = st.columns(3)
             c1.metric("Status", health.get("status", "ok").upper())
             c2.metric("Device", str(health.get("device", "CPU")))
-            c3.metric("Confidence", f"{int(health.get('conf', 0.3)*100)}%")
+            c3.metric("Confidence", f"{ss.conf_thresh}%")
         else:
             st.warning("Backend unreachable.")
             
