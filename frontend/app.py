@@ -1,18 +1,14 @@
 from __future__ import annotations
-
 import base64
 import os
 import sys
 import time
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import cv2
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
-
 from frontend import widgets as w
 from frontend.client import ApiError, SmartVisionClient
 
@@ -24,15 +20,14 @@ STATION = os.getenv("SV_STATION", "SOC station 01")
 NAV = ["Live Monitor", "Incident Log", "System Status"]
 ACCEPTED = ["mp4", "avi", "mov", "mkv", "webm", "m4v", "jpg", "jpeg", "png", "bmp", "webp"]
 
-st.set_page_config(page_title="Smart Vision Hub", layout="wide", initial_sidebar_state="expanded")
-
+# تم تعديل عنوان صفحة المتصفح هنا
+st.set_page_config(page_title="Drone Detection", layout="wide", initial_sidebar_state="expanded")
 
 # ------------------------------------------------------------------ Custom Animated Design
 def inject_navy_animated_design():
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Inter:wght@400;500;600;700&display=swap');
-
     /* Keep Streamlit's native sidebar and its built-in open/close controls available. */
     [data-testid="stSidebar"] {
         position: relative;
@@ -56,7 +51,6 @@ def inject_navy_animated_design():
     [data-testid="stSidebar"] p {
         color: #e2e8f0;
     }
-
     /* The native header contains Streamlit's sidebar toggle, so never hide it. */
     [data-testid="stHeader"] {
         background: rgba(4, 7, 17, 0.30) !important;
@@ -74,19 +68,16 @@ def inject_navy_animated_design():
         border: 1px solid rgba(56, 189, 248, 0.35) !important;
         border-radius: 10px !important;
     }
-
     /* Keep the menu/toolbar available; only hide Streamlit's unrelated footer/menu. */
     #MainMenu, footer {
         visibility: hidden !important;
     }
-
     html, body, .stApp, [data-testid="stAppViewContainer"], .main {
         background: transparent !important;
         background-color: transparent !important;
         font-family: 'Inter', sans-serif !important;
         color: #e2e8f0 !important;
     }
-
     .block-container {
         max-width: 96% !important;
         padding-top: 1.5rem !important;
@@ -94,7 +85,6 @@ def inject_navy_animated_design():
         position: relative;
         z-index: 10 !important;
     }
-
     /* البطاقات الزجاجية الداكنة */
     [data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stForm"] {
         background: rgba(15, 23, 42, 0.72) !important;
@@ -106,7 +96,6 @@ def inject_navy_animated_design():
         padding: 20px !important;
         margin-bottom: 18px !important;
     }
-
     /* الهيدر العلوي */
     .hub-header-card {
         background: rgba(15, 23, 42, 0.78);
@@ -156,7 +145,6 @@ def inject_navy_animated_design():
         letter-spacing: 1.5px;
         background: rgba(46, 229, 157, 0.08);
     }
-
     /* الأزرار العامة */
     .stButton > button {
         width: 100% !important;
@@ -179,7 +167,6 @@ def inject_navy_animated_design():
         color: inherit !important;
         font-weight: 600 !important;
     }
-
     /* حقول الإدخال */
     .stTextInput input {
         border-radius: 999px !important;
@@ -188,7 +175,6 @@ def inject_navy_animated_design():
         color: #f8fafc !important;
         padding: 10px 20px !important;
     }
-
     /* صندوق رفع الملفات */
     [data-testid="stFileUploaderDropzone"] {
         background: rgba(6, 11, 25, 0.65) !important;
@@ -196,7 +182,6 @@ def inject_navy_animated_design():
         border-radius: 16px !important;
         color: #cbd5e1 !important;
     }
-
     /* شريط عنوان الكاميرا وزر Full Screen */
     .cam-topbar {
         display: flex;
@@ -232,7 +217,6 @@ def inject_navy_animated_design():
         color: #060b19 !important;
         box-shadow: 0 0 15px rgba(46, 229, 157, 0.45);
     }
-
     .video-card-wrapper {
         text-align: center;
         position: relative;
@@ -244,7 +228,6 @@ def inject_navy_animated_design():
     }
     </style>
     """, unsafe_allow_html=True)
-
     # 2. Inject the animated navy background and fullscreen overlay
     components.html(
         """
@@ -252,9 +235,6 @@ def inject_navy_animated_design():
         (function() {
             const doc = window.parent.document;
             
-            // Keep the real Streamlit sidebar in place. Do not clone it into a modal:
-            // cloned Streamlit widgets lose their framework event handlers.
-
             // أ. خلفية النيلي المتحركة
             let canvas = doc.getElementById('cbi-network-canvas');
             if (!canvas) {
@@ -268,17 +248,14 @@ def inject_navy_animated_design():
                 canvas.style.zIndex = '0';
                 canvas.style.pointerEvents = 'none';
                 doc.body.prepend(canvas);
-
                 const ctx = canvas.getContext('2d');
                 let width, height, particles;
-
                 function resize() {
                     width = canvas.width = window.parent.innerWidth;
                     height = canvas.height = window.parent.innerHeight;
                 }
                 window.parent.addEventListener('resize', resize);
                 resize();
-
                 particles = [];
                 const count = 75;
                 for (let i = 0; i < count; i++) {
@@ -291,13 +268,11 @@ def inject_navy_animated_design():
                         color: Math.random() > 0.3 ? '#38BDF8' : '#2EE59D'
                     });
                 }
-
                 let mouse = { x: null, y: null };
                 window.parent.addEventListener('mousemove', (e) => {
                     mouse.x = e.clientX;
                     mouse.y = e.clientY;
                 });
-
                 function animate() {
                     ctx.clearRect(0, 0, width, height);
                     for (let i = 0; i < particles.length; i++) {
@@ -306,12 +281,10 @@ def inject_navy_animated_design():
                         p.y += p.vy;
                         if (p.x < 0 || p.x > width) p.vx *= -1;
                         if (p.y < 0 || p.y > height) p.vy *= -1;
-
                         ctx.beginPath();
                         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
                         ctx.fillStyle = p.color;
                         ctx.fill();
-
                         for (let j = i + 1; j < particles.length; j++) {
                             let p2 = particles[j];
                             let dx = p.x - p2.x;
@@ -326,7 +299,6 @@ def inject_navy_animated_design():
                                 ctx.stroke();
                             }
                         }
-
                         if (mouse.x && mouse.y) {
                             let dx = p.x - mouse.x;
                             let dy = p.y - mouse.y;
@@ -346,7 +318,6 @@ def inject_navy_animated_design():
                 animate();
             }
             canvas.style.background = 'radial-gradient(circle at 50% 20%, #101f42 0%, #070d1f 65%, #040711 100%)';
-
             // ج. نافذة Full Screen
             let overlay = doc.getElementById('sv-fs-overlay');
             if (!overlay) {
@@ -360,17 +331,14 @@ def inject_navy_animated_design():
                     <img id="sv-fs-img" style="max-width:94vw; max-height:88vh; border-radius:18px; border:2px solid #2EE59D; box-shadow:0 0 40px rgba(46,229,157,0.25); object-fit:contain;" />
                 `;
                 doc.body.appendChild(overlay);
-
                 const closeFs = () => {
                     window.parent.activeFsCam = null;
                     overlay.style.display = 'none';
                     if (doc.fullscreenElement) doc.exitFullscreen().catch(() => {});
                 };
-
                 overlay.querySelector('#sv-fs-close').addEventListener('click', closeFs);
                 overlay.addEventListener('click', (e) => { if (e.target === overlay) closeFs(); });
                 doc.addEventListener('keydown', (e) => { if (e.key === 'Escape' && window.parent.activeFsCam) closeFs(); });
-
                 doc.addEventListener('click', (e) => {
                     const btn = e.target.closest('.fs-btn');
                     if (btn) {
@@ -379,7 +347,6 @@ def inject_navy_animated_design():
                         if (overlay.requestFullscreen) overlay.requestFullscreen().catch(() => {});
                     }
                 });
-
                 setInterval(() => {
                     const camId = window.parent.activeFsCam;
                     if (camId) {
@@ -396,7 +363,6 @@ def inject_navy_animated_design():
     )
 
 inject_navy_animated_design()
-
 
 # ------------------------------------------------------------------ Clients & State
 @st.cache_resource
@@ -424,8 +390,8 @@ for key, default in {
 
 health = get_health()
 
-
 # ------------------------------------------------------------------ Header Banner
+# تم تعديل الاسم الرئيسي والوصف الفرعي هنا
 def render_hub_header(badge_text: str):
     st.markdown(f"""
     <div class="hub-header-card">
@@ -437,14 +403,13 @@ def render_hub_header(badge_text: str):
                 </svg>
             </div>
             <div>
-                <div class="hub-title">SMART VISION HUB</div>
-                <div style="font-size:0.78rem; color:#94a3b8;">AI Threat & Weapon Detection Center</div>
+                <div class="hub-title">DRONE DETECTION</div>
+                <div style="font-size:0.78rem; color:#94a3b8;">AI Aerial Threat & Drone Detection Center</div>
             </div>
         </div>
         <div class="hub-credit-badge">{badge_text}</div>
     </div>
     """, unsafe_allow_html=True)
-
 
 # ------------------------------------------------------------------ Login Screen
 def login_page():
@@ -468,7 +433,6 @@ def login_page():
 if not ss.logged_in:
     login_page()
     st.stop()
-
 
 # ------------------------------------------------------------------ Left Sidebar Content
 with st.sidebar:
@@ -507,7 +471,6 @@ with st.sidebar:
         ss.active_sources = [ss.saved_sources[v] for v in selected_vids]
     else:
         ss.active_sources = []
-
     st.markdown("<hr style='margin: 1rem 0; border-color: rgba(56, 189, 248, 0.2);'>", unsafe_allow_html=True)
     st.markdown("<div style='color: #2EE59D; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; letter-spacing:1px;'>📐 FRAME & SIZE CONTROL</div>", unsafe_allow_html=True)
     
@@ -519,26 +482,21 @@ with st.sidebar:
         ss.logged_in = False
         st.rerun()
 
-
 # ------------------------------------------------------------------ Top Header
 status_badge = "ONLINE · MODEL READY" if (health and health.get("model_loaded")) else "BACKEND OFFLINE"
 render_hub_header(status_badge)
-
 
 # ------------------------------------------------------------------ Multi-Screen Video Streamer
 def render_multiple_relays(sources: list[dict]):
     num_sources = len(sources)
     if num_sources == 0:
         return
-
     cam_options = ["🔍 All Cameras (Grid)"] + [f"📺 {s['name']}" for s in sources]
     selected_focus = st.pills("Camera Focus:", cam_options, default=cam_options[0], label_visibility="collapsed") if hasattr(st, "pills") else st.radio("Select View:", cam_options, horizontal=True, label_visibility="collapsed")
-
     if selected_focus and selected_focus != "🔍 All Cameras (Grid)":
         target_name = selected_focus.replace("📺 ", "")
         sources = [s for s in sources if s["name"] == target_name]
         num_sources = len(sources)
-
     placeholders = []
     caps = []
     
@@ -560,7 +518,6 @@ def render_multiple_relays(sources: list[dict]):
                             """,
                             unsafe_allow_html=True
                         )
-
                         if source["kind"] == "image":
                             st.image(client.image_bytes(source["id"]), use_container_width=True)
                             placeholders.append(None)
@@ -568,7 +525,6 @@ def render_multiple_relays(sources: list[dict]):
                         else:
                             placeholders.append((st.empty(), source["id"]))
                             caps.append(cv2.VideoCapture(client.stream_url(source["id"])))
-
     try:
         while True:
             active = False
@@ -606,8 +562,6 @@ def render_multiple_relays(sources: list[dict]):
             if cap is not None:
                 cap.release()
 
-
-
 def page_live():
     if health is None:
         st.warning("⚠️ Backend is offline. Please make sure FastAPI is running on port 8000.")
@@ -623,18 +577,16 @@ def page_live():
     else:
         render_multiple_relays(ss.active_sources)
 
-
-
 def page_incidents():
     with st.container(border=True):
-        search_inc = st.text_input("Search incidents", placeholder="Search saved weapon detections...", label_visibility="collapsed")
-        st.markdown("<h4 style='color:#2EE59D !important; margin-top:10px;'>🔴 Confirmed Threat Captures (Confidence ≥ 60%)</h4>", unsafe_allow_html=True)
+        search_inc = st.text_input("Search incidents", placeholder="Search saved drone detections...", label_visibility="collapsed")
+        st.markdown("<h4 style='color:#2EE59D !important; margin-top:10px;'>🔴 Confirmed Drone Captures (Confidence ≥ 60%)</h4>", unsafe_allow_html=True)
         
         images = get_incidents()
         if images is None:
             st.warning("Backend offline: Could not fetch incident frames.")
         elif not images:
-            st.markdown("<div style='text-align:center; padding:30px; color:#94a3b8 !important;'>No weapon threats recorded yet.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; padding:30px; color:#94a3b8 !important;'>No drone threats recorded yet.</div>", unsafe_allow_html=True)
         else:
             filtered = [item for item in images if search_inc.lower() in item["filename"].lower()]
             for start in range(0, min(len(filtered), 12), 3):
@@ -655,7 +607,6 @@ def page_incidents():
                         except Exception:
                             st.warning("Connection error")
 
-
 # ------------------------------------------------------------------ Page 3: SYSTEM STATUS
 def page_system():
     with st.container(border=True):
@@ -675,6 +626,5 @@ def page_system():
                 st.success("Panic alert dispatched!")
             except ApiError as exc:
                 st.error(f"Failed: {exc}")
-
 
 {"Live Monitor": page_live, "Incident Log": page_incidents, "System Status": page_system}[page]()
